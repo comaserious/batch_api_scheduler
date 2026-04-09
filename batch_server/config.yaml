@@ -1,0 +1,15 @@
+services:
+  summarizer:
+    callback_url: http://summarizer-service/api/batch-result
+    default_model: gpt-4.1
+    default_type: responses
+
+  translator:
+    callback_url: http://translator-service/api/batch-result
+    default_model: gpt-4.1-mini
+    default_type: chat
+
+  test_service:
+    callback_url: http://host.docker.internal:1818/test/response
+    default_model: gpt-4.1
+    default_type: responses

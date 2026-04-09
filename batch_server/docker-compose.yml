@@ -1,0 +1,20 @@
+services:
+  batch-automation:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml
+    networks:
+      - batch-redis
+    restart: unless-stopped
+
+# batch-redis must be an external Docker network created beforehand.
+# Create it with: docker network create batch-redis
+networks:
+  batch-redis:
+    external: true
