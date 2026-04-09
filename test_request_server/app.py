@@ -62,9 +62,12 @@ class BatchRequest(BaseModel):
 
 @app.post("/test/response")
 async def test_response(request: BatchRequest):
-    print(request.model_dump())
+    
     for key, value in request.model_dump().items():
-        print(key, value)
+        print("--------------------------------")
+        print(f"KEY : {key}")
+        print(f"VALUE : {value}")
+        print("--------------------------------")
     return {"status": "success", "data": request.model_dump()}
 
 
