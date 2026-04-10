@@ -32,8 +32,8 @@ BatchScheduler (APScheduler + RedisJobStore)
 |------|-----------|--------------|
 | `responses` | `/v1/responses` | role/content 대화 목록 |
 | `chat` | `/v1/chat/completions` | role/content 대화 목록 |
-| `embedding` | `/v1/embeddings` | `[{"content": "텍스트"}]` |
-| `images` | `/v1/images/generations` | `[{"content": "프롬프트"}]` |
+| `embedding` | `/v1/embeddings` | `[{"input": "텍스트", ...}]` |
+| `images` | `/v1/images/generations` | `[{"prompt": "프롬프트", ...}]` |
 
 ### messages 형식 상세
 
