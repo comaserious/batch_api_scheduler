@@ -109,28 +109,40 @@ BatchScheduler (APScheduler + RedisJobStore)
 
 결과 `content`는 생성된 이미지 URL로 반환됩니다.
 
-## 빠른 시작
+## 배포 전략
 
-### 1. 네트워크 생성
+### 핵심 원칙
+
+dev에서 검증한 **이미지를 그대로** prod에 올립니다. dev와 prod가 동일한 이미지 태그를 사용해야 "dev OK = prod OK"가 보장됩니다.
+
+```
+빌드 1회 → dev 검증 → 동일 이미지 그대로 prod 배포
+```
+
+### 배포 파일 구조
+
+```
+batch_server/
+├── docker-compose.dev.yml   # dev (포트 15000, ROOT_PATH=/v1/dev/batch)
+├── docker-compose.prod.yml  # prod (포트 5000,  ROOT_PATH=/v1/batch)
+└── deploy.sh                # 빌드 + 배포 스크립트
+```
+
+### 1단계 — 사전 준비 (최초 1회)
 
 ```bash
+# Redis와 공유할 Docker 네트워크 생성
 docker network create batch-redis
 ```
 
-> Redis 컨테이너가 같은 `batch-redis` 네트워크에 연결되어 있어야 합니다.
-
-### 2. 환경 변수 설정
-
-`batch_server/.env` 파일을 생성합니다.
+`.env` 파일을 생성합니다.
 
 ```env
 OPENAI_API_KEY=sk-...
 REDIS_URL=redis://redis:6379
 ```
 
-### 3. 서비스 설정
-
-`batch_server/config.yaml`에 서비스별 콜백 URL과 기본 모델을 등록합니다.
+`config.yaml`에 서비스를 등록합니다.
 
 ```yaml
 services:
@@ -140,12 +152,55 @@ services:
     default_type: responses
 ```
 
-### 4. 실행
+### 2단계 — 빌드 + dev 배포
 
 ```bash
 cd batch_server
-docker compose up -d
+./deploy.sh 1.0.0 dev
 ```
+
+`batch-automation:1.0.0` 이미지를 빌드하고 dev(15000포트)에 올립니다.
+
+### 3단계 — dev 검증
+
+```
+https://api-aipro.chatbaram.com/v1/dev/batch/docs
+```
+
+### 4단계 — 동일 이미지를 prod에 배포
+
+검증이 완료되면 **재빌드 없이** 같은 이미지를 prod에 올립니다.
+
+```bash
+VERSION=1.0.0 docker compose -f docker-compose.prod.yml up -d --no-build
+```
+
+> `--no-build` 가 핵심입니다. 재빌드 없이 dev에서 검증한 이미지 그대로 prod에 올립니다.
+
+### 롤백
+
+```bash
+# 이전 버전으로 즉시 롤백
+VERSION=0.9.0 docker compose -f docker-compose.prod.yml up -d --no-build
+```
+
+### deploy.sh 사용법
+
+```bash
+./deploy.sh <VERSION> [dev|prod]
+
+./deploy.sh 1.0.0          # 빌드만
+./deploy.sh 1.0.0 dev      # 빌드 + dev 배포
+./deploy.sh 1.0.0 prod     # 빌드 + prod 배포
+```
+
+### 방식 비교
+
+| 항목 | `build: .` 방식 | 이미지 태깅 방식 |
+|------|----------------|----------------|
+| dev 검증 신뢰도 | 낮음 (dev ≠ prod) | 높음 (완전 동일) |
+| 롤백 | 어려움 | `VERSION=이전버전` 한 줄 |
+| 빌드 횟수 | 배포마다 재빌드 | 버전당 1회 |
 
 ## API
 
@@ -285,17 +340,19 @@ uvicorn app:app --port 1818 --reload
 
 ```
 batch_server/
-├── main.py              # FastAPI 엔드포인트
-├── worker.py            # 배치 제출 / 결과 처리 / 콜백 전송
-├── batch_manager.py     # OpenAI Batch API 클라이언트
-├── scheduler.py         # APScheduler 폴링 스케줄러
-├── state_store.py       # Redis 상태 저장소
-├── service_registry.py  # config.yaml 서비스 설정 로더
-├── config.yaml          # 서비스 정의
+├── main.py                  # FastAPI 엔드포인트
+├── worker.py                # 배치 제출 / 결과 처리 / 콜백 전송
+├── batch_manager.py         # OpenAI Batch API 클라이언트
+├── scheduler.py             # APScheduler 폴링 스케줄러
+├── state_store.py           # Redis 상태 저장소
+├── service_registry.py      # config.yaml 서비스 설정 로더
+├── config.yaml              # 서비스 정의
 ├── Dockerfile
-├── docker-compose.yml
+├── docker-compose.dev.yml   # dev 배포 설정 (포트 15000)
+├── docker-compose.prod.yml  # prod 배포 설정 (포트 5000)
+├── deploy.sh                # 빌드 + 배포 스크립트
 └── requirements.txt
 
 test_request_server/
-└── app.py               # 콜백 수신 테스트 서버
+└── app.py                   # 콜백 수신 테스트 서버
 ```
