@@ -1,12 +1,22 @@
 #!/bin/bash
 # 사용법:
-#   ./deploy.sh 1.0.0 dev    # dev 배포
-#   ./deploy.sh 1.0.0 prod   # prod 배포
+#   ./deploy.sh 1.0.0 dev    # 빌드 + dev 배포
+#   ./deploy.sh 1.0.0 prod   # 빌드 + prod 배포
 #   ./deploy.sh 1.0.0        # 빌드만
+#   ./deploy.sh logs         # dev + prod 로그 동시 출력
 
 set -e
 
-VERSION=${1:?"버전을 입력하세요. 예: ./deploy.sh 1.0.0"}
+CMD=${1:?"명령을 입력하세요. 예: ./deploy.sh 1.0.0 dev | ./deploy.sh logs"}
+
+# logs 명령은 버전 불필요
+if [ "$CMD" = "logs" ]; then
+    echo "▶ dev + prod 로그 출력 (Ctrl+C 로 종료)"
+    docker compose -f docker-compose.dev.yml -f docker-compose.prod.yml logs -f --timestamps
+    exit 0
+fi
+
+VERSION=$CMD
 TARGET=${2:-""}
 IMAGE="batch-automation:$VERSION"
 
