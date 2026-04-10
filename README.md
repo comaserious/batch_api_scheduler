@@ -28,12 +28,86 @@ BatchScheduler (APScheduler + RedisJobStore)
 
 ## 지원 API 타입
 
-| type | OpenAI API |
-|------|-----------|
-| `responses` | `/v1/responses` |
-| `chat` | `/v1/chat/completions` |
-| `embedding` | `/v1/embeddings` |
-| `images` | `/v1/images/generations` |
+| type | OpenAI API | messages 형식 |
+|------|-----------|--------------|
+| `responses` | `/v1/responses` | role/content 대화 목록 |
+| `chat` | `/v1/chat/completions` | role/content 대화 목록 |
+| `embedding` | `/v1/embeddings` | `[{"content": "텍스트"}]` |
+| `images` | `/v1/images/generations` | `[{"content": "프롬프트"}]` |
+
+### messages 형식 상세
+
+`messages`는 항상 `list[list[dict]]` 형태입니다. 바깥 리스트의 각 항목이 하나의 배치 요청이 됩니다.
+
+#### `responses` / `chat`
+
+각 요청은 role/content 딕셔너리의 리스트입니다.
+
+```json
+{
+  "type": "responses",
+  "messages": [
+    [
+      {"role": "system", "content": "당신은 친절한 AI입니다."},
+      {"role": "user",   "content": "안녕하세요!"}
+    ],
+    [
+      {"role": "user", "content": "오늘 날씨는?"}
+    ]
+  ]
+}
+```
+
+#### `embedding`
+
+각 요청은 [OpenAI Embeddings API](https://platform.openai.com/docs/api-reference/embeddings/create) 파라미터를 담은 딕셔너리 하나를 원소로 하는 리스트입니다.
+
+| 파라미터 | 필수 | 설명 |
+|---------|------|------|
+| `input` | 필수 | 임베딩할 텍스트 |
+| `dimensions` | 선택 | 출력 벡터 차원 수 (text-embedding-3 이상) |
+| `encoding_format` | 선택 | `float` 또는 `base64` (기본값: `float`) |
+| `user` | 선택 | 최종 사용자 식별 ID |
+
+```json
+{
+  "type": "embedding",
+  "messages": [
+    [{"input": "임베딩할 텍스트 1"}],
+    [{"input": "임베딩할 텍스트 2", "dimensions": 512, "encoding_format": "float"}]
+  ]
+}
+```
+
+결과 `content`는 임베딩 벡터를 JSON 직렬화한 문자열로 반환됩니다.
+
+#### `images`
+
+각 요청은 [OpenAI Images API](https://platform.openai.com/docs/api-reference/images/create) 파라미터를 담은 딕셔너리 하나를 원소로 하는 리스트입니다.
+
+| 파라미터 | 필수 | 설명 |
+|---------|------|------|
+| `prompt` | 필수 | 이미지 생성 프롬프트 |
+| `n` | 선택 | 생성할 이미지 수 (1~10) |
+| `size` | 선택 | `1024x1024`, `1536x1024` 등 |
+| `quality` | 선택 | `standard`, `hd`, `low`, `medium`, `high`, `auto` |
+| `response_format` | 선택 | `url` 또는 `b64_json` |
+| `background` | 선택 | `transparent`, `opaque`, `auto` |
+| `output_format` | 선택 | `png`, `jpeg`, `webp` |
+| `output_compression` | 선택 | 0~100 압축 수준 |
+| `moderation` | 선택 | `low` 또는 `auto` |
+
+```json
+{
+  "type": "images",
+  "messages": [
+    [{"prompt": "A beautiful sunset over the ocean"}],
+    [{"prompt": "A futuristic city at night", "size": "1024x1024", "quality": "hd", "n": 1}]
+  ]
+}
+```
+
+결과 `content`는 생성된 이미지 URL로 반환됩니다.
 
 ## 빠른 시작
 

@@ -10,6 +10,6 @@ services:
     default_type: chat
 
   test_service:
-    callback_url: http://host.docker.internal:1818/test/response
+    callback_url: https://dev.chatbaram.com:9300/test/get/batches
     default_model: gpt-4.1
     default_type: responses

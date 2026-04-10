@@ -2,7 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, APIRouter
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from redis.asyncio import Redis
@@ -17,11 +17,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     openai_api_key: str = ""
     redis_url: str  # required — set REDIS_URL in .env or environment
+    root_path: str = ""
 
 
 settings = Settings()
@@ -32,7 +34,6 @@ registry = ServiceRegistry("config.yaml")
 _batch_manager = BatchManager(api_key=settings.openai_api_key or None)
 worker = BatchWorker(_batch_manager, store, registry)
 scheduler = BatchScheduler(worker, settings.redis_url)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -46,7 +47,7 @@ async def lifespan(app: FastAPI):
     await redis_client.aclose()
 
 
-app = FastAPI(title="Batch Automation Service", lifespan=lifespan)
+app = FastAPI(title="Batch Automation Service", lifespan=lifespan, root_path=settings.root_path)
 
 
 class BatchRequest(BaseModel):

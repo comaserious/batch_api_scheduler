@@ -15,7 +15,7 @@ class BatchManager:
     """
     BATCH 처리 LIMIT
 
-    1. 한 배칭당 최대 : 50_000
+    1. 한 배치당 최대 : 50_000
     2. 업로드 JSONL 파일 최대 ~100MB
     """
     URL_MAP = {
@@ -41,59 +41,58 @@ class BatchManager:
         model: str,
         type_: str = "responses",
     ) -> str:
-        """
-        messages = [[{"role": "system", "content": "..."}, {"role": "user", "content": "hello"}],[{"role": "user", "content": "hello"}]]
-        """
-        data = []
-        for i, message in enumerate(messages):
-            custom_id = f"{chat_bot_id}-{i}"
+        """JSONL 배치 파일을 생성합니다.
 
-            if type_ == "responses":
-                data.append({
-                    "custom_id": custom_id,
-                    "method": "POST",
-                    "url": self.URL_MAP[type_],
-                    "body": {
-                        "model": model,
-                        "input": message,
-                    },
-                })
-            elif type_ == "chat":
-                data.append({
-                    "custom_id": custom_id,
-                    "method": "POST",
-                    "url": self.URL_MAP[type_],
-                    "body": {
-                        "model": model,
-                        "messages": message,
-                    },
-                })
-            elif type_ == "embedding":
-                # message[0]["content"] 를 embedding input 텍스트로 사용
-                input_text = message[0].get("content", "") if message else ""
-                data.append({
-                    "custom_id": custom_id,
-                    "method": "POST",
-                    "url": self.URL_MAP[type_],
-                    "body": {
-                        "model": model,
-                        "input": input_text,
-                    },
-                })
-            elif type_ == "images":
-                # message[0]["content"] 를 이미지 생성 prompt 로 사용
-                prompt = message[0].get("content", "") if message else ""
-                data.append({
-                    "custom_id": custom_id,
-                    "method": "POST",
-                    "url": self.URL_MAP[type_],
-                    "body": {
-                        "model": model,
-                        "prompt": prompt,
-                    },
-                })
-            else:
-                raise ValueError(f"Invalid type: {type_}")
+        type_ 별 messages 형식:
+
+        responses / chat:
+            각 항목은 role/content 딕셔너리의 리스트 (대화 메시지 목록)
+            messages = [
+                [{"role": "system", "content": "당신은 친절한 AI입니다."},
+                 {"role": "user",   "content": "안녕하세요!"}],
+                [{"role": "user", "content": "오늘 날씨는?"}],
+            ]
+
+        embedding:
+            각 항목은 OpenAI Embeddings API 파라미터를 담은 딕셔너리 하나를 원소로 갖는 리스트.
+            필수: input (str)
+            선택: dimensions, encoding_format, user
+            messages = [
+                [{"input": "임베딩할 텍스트 1"}],
+                [{"input": "임베딩할 텍스트 2", "dimensions": 512, "encoding_format": "float"}],
+            ]
+
+        images:
+            각 항목은 OpenAI Images API 파라미터를 담은 딕셔너리 하나를 원소로 갖는 리스트.
+            필수: prompt (str)
+            선택: n, size, quality, response_format, background, output_format, output_compression, moderation
+            messages = [
+                [{"prompt": "A beautiful sunset over the ocean"}],
+                [{"prompt": "A futuristic city at night", "size": "1024x1024", "quality": "hd", "n": 1}],
+            ]
+        """
+        if type_ not in self.URL_MAP:
+            raise ValueError(f"Invalid type: {type_!r}. Valid types: {list(self.URL_MAP)}")
+
+        # type 검사는 여기서 한 번만 수행하고, 루프 안에서는 분기 없이 처리
+        # embedding/images는 msg[0]의 파라미터를 그대로 언팩하여 API에 투명하게 전달
+        build_body = {
+            "responses": lambda msg: {"model": model, "input": msg},
+            "chat":      lambda msg: {"model": model, "messages": msg},
+            "embedding": lambda msg: {"model": model, **msg[0]},
+            "images":    lambda msg: {"model": model, **msg[0]},
+        }[type_]
+
+        url = self.URL_MAP[type_]
+        data = [
+            {
+                "custom_id": f"{chat_bot_id}-{i}",
+                "method": "POST",
+                "url": url,
+                "body": build_body(message),
+            }
+            for i, message in enumerate(messages)
+        ]
 
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         file_path = f"data/{chat_bot_id}-batch-{timestamp}-{secrets.token_hex(4)}.jsonl"
