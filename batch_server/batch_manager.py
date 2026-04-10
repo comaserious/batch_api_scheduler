@@ -2,7 +2,9 @@ import asyncio
 import json
 import logging
 import os
+import secrets
 from datetime import datetime
+from pathlib import Path
 
 from openai import AsyncOpenAI
 
@@ -19,6 +21,8 @@ class BatchManager:
     URL_MAP = {
         "responses": "/v1/responses",
         "chat": "/v1/chat/completions",
+        "embedding": "/v1/embeddings",
+        "images": "/v1/images/generations",
     }
 
     def __init__(self, api_key: str | None = None):
@@ -64,11 +68,35 @@ class BatchManager:
                         "messages": message,
                     },
                 })
+            elif type_ == "embedding":
+                # message[0]["content"] 를 embedding input 텍스트로 사용
+                input_text = message[0].get("content", "") if message else ""
+                data.append({
+                    "custom_id": custom_id,
+                    "method": "POST",
+                    "url": self.URL_MAP[type_],
+                    "body": {
+                        "model": model,
+                        "input": input_text,
+                    },
+                })
+            elif type_ == "images":
+                # message[0]["content"] 를 이미지 생성 prompt 로 사용
+                prompt = message[0].get("content", "") if message else ""
+                data.append({
+                    "custom_id": custom_id,
+                    "method": "POST",
+                    "url": self.URL_MAP[type_],
+                    "body": {
+                        "model": model,
+                        "prompt": prompt,
+                    },
+                })
             else:
                 raise ValueError(f"Invalid type: {type_}")
 
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        file_path = f"data/{chat_bot_id}-batch-{timestamp}.jsonl"
+        file_path = f"data/{chat_bot_id}-batch-{timestamp}-{secrets.token_hex(4)}.jsonl"
         jsonl_content = "\n".join(json.dumps(item, ensure_ascii=False) for item in data)
 
         os.makedirs("data", exist_ok=True)
@@ -78,17 +106,20 @@ class BatchManager:
         return file_path
 
     def _parse_output_file(self, text: str) -> list[dict]:
-        lines = text.strip().split("\n")
-        return [json.loads(line) for line in lines]
+        stripped = text.strip()
+        if not stripped:
+            return []
+        return [json.loads(line) for line in stripped.split("\n")]
 
     async def _send_batch(self, file_path: str, type_: str = "responses", completion_window: str = "24h"):
         endpoint = self.URL_MAP[type_]
 
-        with open(file_path, "rb") as f:
-            batch_input_file = await self._client.files.create(
-                file=f,
-                purpose="batch",
-            )
+        # Read file bytes off the event loop to avoid blocking
+        file_bytes = await asyncio.to_thread(Path(file_path).read_bytes)
+        batch_input_file = await self._client.files.create(
+            file=(Path(file_path).name, file_bytes),
+            purpose="batch",
+        )
 
         return await self._client.batches.create(
             input_file_id=batch_input_file.id,
@@ -118,7 +149,7 @@ class BatchManager:
             raise ValueError(f"Batch failed: {batch_result.errors}")
 
         return {
-            "file_path": file_path,
+            "input_file_id": batch_result.input_file_id,
             "batch_id": batch_result.id,
             "status": batch_result.status,
         }
@@ -170,6 +201,13 @@ class BatchManager:
             file_path = self._create_jsonl(messages, chat_bot_id, model, type_)
             file_paths.append(file_path)
 
-        return list(await asyncio.gather(
-            *[self._send_batch(fp, type_) for fp in file_paths]
-        ))
+        try:
+            return list(await asyncio.gather(
+                *[self._send_batch(fp, type_) for fp in file_paths]
+            ))
+        finally:
+            for fp in file_paths:
+                try:
+                    os.remove(fp)
+                except OSError as exc:
+                    logger.warning("Could not delete temp file %s: %s", fp, exc)

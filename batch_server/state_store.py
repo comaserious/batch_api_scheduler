@@ -13,7 +13,7 @@ class BatchState:
     status: str
     submitted_at: datetime
     expected_check_at: datetime
-    file_path: str
+    input_file_id: str
     metadata: Optional[dict] = None
     errors: Optional[list] = None
 
@@ -24,7 +24,7 @@ class BatchState:
             "status": self.status,
             "submitted_at": self.submitted_at.isoformat(),
             "expected_check_at": self.expected_check_at.isoformat(),
-            "file_path": self.file_path,
+            "input_file_id": self.input_file_id,
         }
         if self.metadata is not None:
             data["metadata"] = json.dumps(self.metadata)
@@ -41,7 +41,7 @@ class BatchState:
         normalized = {decode(k): decode(v) for k, v in data.items()}
 
         # Check for required fields
-        required_fields = ["service_name", "chat_bot_id", "status", "submitted_at", "expected_check_at", "file_path"]
+        required_fields = ["service_name", "chat_bot_id", "status", "submitted_at", "expected_check_at", "input_file_id"]
         missing = [f for f in required_fields if f not in normalized]
         if missing:
             raise ValueError(f"Corrupted batch state for {batch_id}: missing fields {missing}")
@@ -66,7 +66,7 @@ class BatchState:
             status=normalized["status"],
             submitted_at=datetime.fromisoformat(normalized["submitted_at"]),
             expected_check_at=datetime.fromisoformat(normalized["expected_check_at"]),
-            file_path=normalized["file_path"],
+            input_file_id=normalized["input_file_id"],
             metadata=metadata,
             errors=errors,
         )
@@ -83,8 +83,10 @@ class BatchStateStore:
 
     async def save(self, state: BatchState) -> None:
         key = self._key(state.batch_id)
-        await self._redis.hset(key, mapping=state.to_redis_dict())
-        await self._redis.expire(key, self.TTL_SECONDS)
+        async with self._redis.pipeline(transaction=True) as pipe:
+            pipe.hset(key, mapping=state.to_redis_dict())
+            pipe.expire(key, self.TTL_SECONDS)
+            await pipe.execute()
 
     async def get(self, batch_id: str) -> Optional[BatchState]:
         key = self._key(batch_id)
@@ -100,7 +102,19 @@ class BatchStateStore:
         updates: dict = {"status": status}
         if errors is not None:
             updates["errors"] = json.dumps(errors)
-        await self._redis.hset(key, mapping=updates)
+        async with self._redis.pipeline(transaction=True) as pipe:
+            pipe.hset(key, mapping=updates)
+            pipe.expire(key, self.TTL_SECONDS)
+            await pipe.execute()
+
+    async def acquire_lock(self, batch_id: str, ttl_seconds: int = 60) -> bool:
+        """Try to acquire a per-batch processing lock. Returns True if acquired."""
+        return await self._redis.set(
+            f"lock:check:{batch_id}", "1", nx=True, ex=ttl_seconds
+        )
+
+    async def release_lock(self, batch_id: str) -> None:
+        await self._redis.delete(f"lock:check:{batch_id}")
 
     async def delete(self, batch_id: str) -> None:
         await self._redis.delete(self._key(batch_id))

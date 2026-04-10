@@ -14,6 +14,7 @@ from state_store import BatchStateStore
 from worker import BatchWorker
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -35,6 +36,10 @@ scheduler = BatchScheduler(worker, settings.redis_url)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if not settings.openai_api_key:
+        logger.warning(
+            "OPENAI_API_KEY is not set — all OpenAI API calls will fail at runtime"
+        )
     scheduler.start()
     yield
     scheduler.shutdown()
@@ -98,7 +103,7 @@ async def get_batch(batch_id: str, refresh: bool = False):
         "status": state.status,
         "submitted_at": state.submitted_at.isoformat(),
         "expected_check_at": state.expected_check_at.isoformat(),
-        "file_path": state.file_path,
+        "input_file_id": state.input_file_id,
         "metadata": state.metadata,
         "errors": state.errors,
     }
@@ -127,5 +132,15 @@ async def delete_batch(batch_id: str):
     state = await store.get(batch_id)
     if not state:
         raise HTTPException(status_code=404, detail="Batch not found")
+
+    # Stop the scheduled polling job so we don't check a deleted batch
+    scheduler.remove_job(batch_id)
+
+    # Cancel the batch on OpenAI if it's still in progress
+    try:
+        await _batch_manager.cancel_batch(batch_id)
+    except Exception as exc:
+        logger.warning("Could not cancel OpenAI batch %s: %s", batch_id, exc)
+
     await store.delete(batch_id)
     return {"deleted": batch_id}

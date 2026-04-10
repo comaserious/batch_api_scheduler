@@ -68,6 +68,10 @@ async def test_response(request: BatchRequest):
         print(f"KEY : {key}")
         print(f"VALUE : {value}")
         print("--------------------------------")
+
+    ####################################
+    # DB 저장 로직 
+    ####################################
     return {"status": "success", "data": request.model_dump()}
 
 

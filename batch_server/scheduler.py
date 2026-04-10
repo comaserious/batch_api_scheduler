@@ -10,6 +10,9 @@ logger = logging.getLogger(__name__)
 # Exponential backoff: 5 → 10 → 20 → 40 → 60min (capped)
 _BACKOFF_MINUTES = [5, 10, 20, 40, 60]
 
+# Exported so worker.py can use the same value for expected_check_at
+FIRST_CHECK_DELAY = timedelta(minutes=_BACKOFF_MINUTES[0])
+
 # Module-level references so the job function (which must be pickle-safe)
 # can reach the worker and scheduler without capturing instance state.
 _worker = None
@@ -42,7 +45,12 @@ def _schedule_next_check(batch_id: str, attempt: int) -> None:
 async def _check_job(batch_id: str, attempt: int) -> None:
     """Top-level async function — picklable by reference for RedisJobStore."""
     logger.info("Checking batch %s (attempt %d)", batch_id, attempt)
-    status = await _worker.check_and_dispatch(batch_id)
+    try:
+        status = await _worker.check_and_dispatch(batch_id)
+    except Exception as exc:
+        logger.error("Unexpected error checking batch %s: %s — rescheduling", batch_id, exc)
+        _schedule_next_check(batch_id, attempt + 1)
+        return
     logger.info("Batch %s status: %s", batch_id, status)
     if status == "pending":
         _schedule_next_check(batch_id, attempt + 1)
@@ -81,3 +89,13 @@ class BatchScheduler:
 
     def schedule_next_check(self, batch_id: str, attempt: int = 0) -> None:
         _schedule_next_check(batch_id, attempt)
+
+    def remove_job(self, batch_id: str) -> None:
+        """Remove a scheduled check job. No-op if the job doesn't exist."""
+        from apscheduler.jobstores.base import JobLookupError
+        job_id = f"check_{batch_id}"
+        try:
+            self._scheduler.remove_job(job_id)
+            logger.info("Removed scheduled job for batch %s", batch_id)
+        except JobLookupError:
+            pass
