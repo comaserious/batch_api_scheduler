@@ -16,6 +16,11 @@ if [ "$CMD" = "logs" ]; then
     exit 0
 fi
 
+if [ "$CMD" = "help"]; then
+    echo "▶ 사용법: http://gitea.chatbaram.com:3000/Asadal_AI_PRO/Openai_batch_server Readme.md 참고"
+    exit 0
+fi
+
 VERSION=$CMD
 TARGET=${2:-""}
 IMAGE="batch-automation:$VERSION"
