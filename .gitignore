@@ -2,3 +2,5 @@
 /data
 /docs
 .claude
+/data-dev
+__pycache__/
