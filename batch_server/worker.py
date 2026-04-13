@@ -34,6 +34,7 @@ class BatchWorker:
         type_: str,
         completion_window: str = "24h",
         metadata: Optional[dict] = None,
+        text_format: Optional[dict] = None,
     ) -> BatchState:
         result = await self._manager.request_batch(
             messages=messages,
@@ -41,6 +42,7 @@ class BatchWorker:
             model=model,
             type_=type_,
             completion_window=completion_window,
+            text_format=text_format,
         )
         now = datetime.now(timezone.utc)
         state = BatchState(

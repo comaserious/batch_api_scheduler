@@ -40,6 +40,7 @@ class BatchManager:
         chat_bot_id: str,
         model: str,
         type_: str = "responses",
+        text_format: dict | None = None,
     ) -> str:
         """JSONL 배치 파일을 생성합니다.
 
@@ -77,7 +78,11 @@ class BatchManager:
         # type 검사는 여기서 한 번만 수행하고, 루프 안에서는 분기 없이 처리
         # embedding/images는 msg[0]의 파라미터를 그대로 언팩하여 API에 투명하게 전달
         build_body = {
-            "responses": lambda msg: {"model": model, "input": msg},
+            "responses": lambda msg: {
+                "model": model,
+                "input": msg,
+                **({"text": text_format} if text_format else {}),
+            },
             "chat":      lambda msg: {"model": model, "messages": msg},
             "embedding": lambda msg: {"model": model, **msg[0]},
             "images":    lambda msg: {"model": model, **msg[0]},
@@ -133,8 +138,9 @@ class BatchManager:
         model: str,
         type_: str = "responses",
         completion_window: str = "24h",
+        text_format: dict | None = None,
     ):
-        file_path = self._create_jsonl(messages, chat_bot_id, model, type_)
+        file_path = self._create_jsonl(messages, chat_bot_id, model, type_, text_format)
         batch_result = await self._send_batch(file_path, type_, completion_window)
 
         # Delete local JSONL after successful upload to avoid disk accumulation
@@ -194,10 +200,11 @@ class BatchManager:
         chat_bot_id: str,
         model: str,
         type_: str = "responses",
+        text_format: dict | None = None,
     ) -> list:
         file_paths = []
         for messages in messages_list:
-            file_path = self._create_jsonl(messages, chat_bot_id, model, type_)
+            file_path = self._create_jsonl(messages, chat_bot_id, model, type_, text_format)
             file_paths.append(file_path)
 
         try:

@@ -58,6 +58,7 @@ class BatchRequest(BaseModel):
     type: Optional[str] = None
     completion_window: str = "24h"
     metadata: Optional[dict] = None
+    text_format: Optional[dict] = None
 
 
 @app.post("/batches")
@@ -77,6 +78,7 @@ async def submit_batch(req: BatchRequest):
         type_=type_,
         completion_window=req.completion_window,
         metadata=req.metadata,
+        text_format=req.text_format,
     )
     scheduler.schedule_next_check(state.batch_id, attempt=0)
 

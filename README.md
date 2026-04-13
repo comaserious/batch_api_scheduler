@@ -109,6 +109,82 @@ BatchScheduler (APScheduler + RedisJobStore)
 
 결과 `content`는 생성된 이미지 URL로 반환됩니다.
 
+## Structured Output (JSON Schema)
+
+`type: "responses"` 사용 시 `text_format` 파라미터로 응답 형식을 JSON Schema로 강제할 수 있습니다.
+
+### 지원 조건
+
+- `type: "responses"` 전용 (`chat`, `embedding`, `images`에는 적용되지 않음)
+- 모델: `gpt-4o-2024-08-06` 이상 또는 `gpt-4o-mini` 이상 필수
+
+### 요청 예시
+
+```json
+{
+  "messages": [
+    [
+      {"role": "system", "content": "You are a translator. Translate the given text."},
+      {"role": "user", "content": "Translate: hello, world"}
+    ]
+  ],
+  "service_name": "my_service",
+  "chat_bot_id": "bot_001",
+  "model": "gpt-4o-2024-08-06",
+  "type": "responses",
+  "text_format": {
+    "format": {
+      "type": "json_schema",
+      "name": "translation_output",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "translations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": {"type": "integer"},
+                "text": {"type": "string"}
+              },
+              "required": ["index", "text"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["translations"],
+        "additionalProperties": false
+      }
+    }
+  }
+}
+```
+
+콜백으로 수신되는 `results[].content`는 스키마에 맞는 JSON 문자열입니다.
+
+```json
+{
+  "results": [
+    {
+      "custom_id": "bot_001-0",
+      "content": "{\"translations\": [{\"index\": 0, \"text\": \"안녕, 세계\"}]}",
+      "error": null
+    }
+  ]
+}
+```
+
+### `strict: true` 사용 시 스키마 규칙
+
+| 규칙 | 설명 |
+|------|------|
+| 모든 필드를 `required`에 명시 | 선택 필드도 포함해야 함 |
+| `additionalProperties: false` | 모든 오브젝트에 필수 |
+| 중첩 오브젝트에도 동일 규칙 적용 | 재귀적으로 적용됨 |
+
+---
+
 ## 배포 전략
 
 ### 핵심 원칙
@@ -229,9 +305,12 @@ POST /batches
   "metadata": {
     "db_name": "mydb",
     "description": "추가 정보"
-  }
+  },
+  "text_format": null
 }
 ```
+
+`text_format`은 선택 파라미터입니다. JSON Schema로 응답 형식을 강제하려면 [Structured Output](#structured-output-json-schema) 섹션을 참고하세요.
 
 **응답**
 
